@@ -1,6 +1,6 @@
 services:
   docker-maintenance:
-    image: ghcr.io/api-apoteket/docker-idempotent-update:latest
+    image: ghcr.io/blixten85/docker-idempotent-update:latest
     container_name: docker-maintenance
     restart: unless-stopped
     environment:
