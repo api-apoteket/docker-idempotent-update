@@ -4,7 +4,7 @@ Daily Docker host maintenance in a single container. Pulls updated images, recre
 
 ## Tech Stack
 
-- POSIX shell / Bash
+- Python 3.13
 - Docker (socket or Compose)
 - rclone for backups
 - msmtp for email
@@ -13,18 +13,18 @@ Daily Docker host maintenance in a single container. Pulls updated images, recre
 ## File Overview
 
 ```
-entrypoint.sh       # Validates config, starts crond
-run.sh              # Main daily job (update + backup + report)
-rclone_backup.sh    # Rclone sync logic
-send_report.sh      # Assembles and sends email summary
+src/entrypoint.py   # Validates config, registers cron, execs crond
+src/run.py          # Main daily job (update + backup + report + status)
+src/docker_update.py# Docker pull + restart logic
+src/backup.py       # Rclone sync logic
+src/report.py       # Assembles and sends email summary
+src/config.py       # Config class — reads env vars and backup.conf
 backup.conf.template
 msmtprc.template
 ```
 
 ## Conventions
 
-- All shell scripts must begin with `set -euo pipefail`
-- POSIX-compatible where possible; bash only when necessary
 - All secrets via environment variables — never hardcoded
-- No external dependencies beyond what ships in the Docker image
+- No third-party Python packages — stdlib only
 - Test changes with `docker compose run --rm` before committing

@@ -5,12 +5,12 @@ on:
     branches: [main]
     paths:
       - 'Dockerfile'
-      - '*.sh'
+      - 'src/**'
       - '*.template'
   pull_request:
     paths:
       - 'Dockerfile'
-      - '*.sh'
+      - 'src/**'
       - '*.template'
       - '.github/workflows/build.yml'
   release:
@@ -36,8 +36,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
-      - name: shellcheck
-        run: shellcheck entrypoint.sh run.sh rclone_backup.sh send_report.sh
+      - uses: astral-sh/setup-uv@f0ec1fc3b38f5e7cd731bb6ce540c5af426746bb  # v6
+      - name: ruff check
+        run: uvx ruff check src/
+      - name: ruff format
+        run: uvx ruff format --check src/
 
   smoke:
     runs-on: ubuntu-latest
@@ -64,8 +67,8 @@ jobs:
             echo "invalid MODE was not rejected (exit 0)"
             exit 1
           fi
-          echo "$out" | grep -q "ERROR: invalid MODE" || {
-            echo "expected ERROR message not found"
+          echo "$out" | grep -q "Invalid MODE" || {
+            echo "expected Invalid MODE message not found"
             exit 1
           }
       - name: Validate startup for MODE
@@ -79,7 +82,7 @@ jobs:
             touch /tmp/cfg/rclone.conf
             MOUNTS+=(-v /tmp/data:/data:ro)
           fi
-          # Detached + logs pattern — entrypoint.sh execs into crond which never
+          # Detached + logs pattern — entrypoint execs into crond which never
           # exits, so foreground `timeout 5 docker run` would hang past the 6h
           # GHA cap if SIGTERM is not propagated cleanly.
           cid=$(docker run -d \
@@ -93,7 +96,7 @@ jobs:
           echo "$out"
           echo "$out" | grep -q "Mode: $MODE" || { echo "startup line missing"; exit 1; }
           echo "$out" | grep -q "Scheduled:" || { echo "never reached crond setup"; exit 1; }
-      - name: Run run.sh with DRY_RUN for MODE
+      - name: Run with DRY_RUN for MODE
         run: |
           MOUNTS=(-v /tmp/cfg:/config)
           if [ "$MODE" = "update" ] || [ "$MODE" = "both" ]; then
@@ -102,21 +105,22 @@ jobs:
           if [ "$MODE" = "backup" ] || [ "$MODE" = "both" ]; then
             MOUNTS+=(-v /tmp/data:/data:ro)
           fi
-          # run.sh exits on its own; defensive timeout + SIGKILL grace guards
-          # against future regressions and avoids the 6h GHA cap.
           out=$(timeout --kill-after=10 60 docker run --rm \
-            --entrypoint /usr/local/bin/run.sh \
+            --entrypoint python3 \
             -e MODE="$MODE" \
             -e DRY_RUN=true \
             "${MOUNTS[@]}" \
-            didu:test 2>&1 || true)
+            didu:test -m src.run 2>&1 || true)
           echo "$out"
-          echo "$out" | grep -q "=== mode: $MODE ===" || { echo "run.sh did not log mode header"; exit 1; }
-          echo "$out" | grep -q "=== send report ===" || { echo "send_report.sh was not invoked"; exit 1; }
+          echo "$out" | grep -q "=== mode: $MODE ===" || { echo "run did not log mode header"; exit 1; }
+          echo "$out" | grep -q "=== send report ===" || { echo "send_report was not invoked"; exit 1; }
           echo "$out" | grep -q "Status written" || { echo "status.json was not written"; exit 1; }
           [ -s /tmp/cfg/status.json ] || { echo "status.json missing or empty"; exit 1; }
-          jq -e --arg m "$MODE" '.mode == $m' /tmp/cfg/status.json \
-            || { echo "status.json mode field mismatch"; cat /tmp/cfg/status.json; exit 1; }
+          python3 -c "
+import json, sys
+s = json.load(open('/tmp/cfg/status.json'))
+assert s['mode'] == '$MODE', f'mode mismatch: {s[\"mode\"]}'
+" || { echo "status.json mode field mismatch"; cat /tmp/cfg/status.json; exit 1; }
 
   build:
     runs-on: ubuntu-latest

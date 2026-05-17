@@ -28,16 +28,6 @@ assert_not_contains() {
     fi
 }
 
-assert_json_eq() {
-    local file="$1" jq_expr="$2" expected="$3" label="$4"
-    actual="$(jq -r "$jq_expr" "$file" 2>/dev/null)"
-    if [ "$actual" = "$expected" ]; then
-        pass "$label"
-    else
-        fail "$label (expected '$expected', got '$actual')"
-    fi
-}
-
 assert_yaml_field() {
     local file="$1" py_expr="$2" expected="$3" label="$4"
     actual="$(python3 -c "
@@ -154,85 +144,28 @@ assert_contains "$PRTEMPLATE" "- [ ]" "pr_template: uses unchecked task list syn
 assert_contains "$PRTEMPLATE" "-" "pr_template: Summary section has content placeholder"
 
 # ---------------------------------------------------------------------------
-echo "=== renovate.json: JSON validity and automerge settings ==="
+echo "=== dependabot.yml: Dependabot configuration ==="
 
-RENOVATE="$REPO_ROOT/.github/renovate.json"
+DEPENDABOT="$REPO_ROOT/.github/dependabot.yml"
 
-if jq empty "$RENOVATE" 2>/dev/null; then
-    pass "renovate.json is valid JSON"
+if python3 -c "import yaml; yaml.safe_load(open('$DEPENDABOT'))" 2>/dev/null; then
+    pass "dependabot.yml is valid YAML"
 else
-    fail "renovate.json is valid JSON"
+    fail "dependabot.yml is valid YAML"
 fi
 
-assert_json_eq "$RENOVATE" '."$schema"' \
-    "https://docs.renovatebot.com/renovate-schema.json" \
-    "renovate.json: schema URL is correct"
+assert_yaml_field "$DEPENDABOT" "data['version']" "2" \
+    "dependabot.yml: version is 2"
 
-# Patch-only automerge rule (key PR change: minor was removed)
-assert_json_eq "$RENOVATE" \
-    '[.packageRules[] | select(.matchUpdateTypes != null)] | length' \
-    "1" \
-    "renovate.json: exactly one rule uses matchUpdateTypes"
+assert_yaml_field "$DEPENDABOT" \
+    "str('github-actions' in [u['package-ecosystem'] for u in data['updates']])" \
+    "True" \
+    "dependabot.yml: github-actions ecosystem present"
 
-assert_json_eq "$RENOVATE" \
-    '[.packageRules[] | select(.matchUpdateTypes != null)] | .[0].matchUpdateTypes | length' \
-    "1" \
-    "renovate.json: matchUpdateTypes rule has exactly one entry (patch only, not minor+patch)"
-
-assert_json_eq "$RENOVATE" \
-    '[.packageRules[] | select(.matchUpdateTypes != null)] | .[0].matchUpdateTypes[0]' \
-    "patch" \
-    "renovate.json: the sole matchUpdateTypes entry is 'patch'"
-
-# Confirm 'minor' is NOT listed in matchUpdateTypes (regression check for PR change)
-actual_types="$(jq -r '[.packageRules[] | select(.matchUpdateTypes != null)] | .[0].matchUpdateTypes | @csv' "$RENOVATE")"
-if ! echo "$actual_types" | grep -q "minor"; then
-    pass "renovate.json: 'minor' is NOT in matchUpdateTypes (patch-only automerge)"
-else
-    fail "renovate.json: 'minor' should NOT be in matchUpdateTypes (patch-only automerge)"
-fi
-
-# automerge: true for the patch rule (PR change: was false)
-assert_json_eq "$RENOVATE" \
-    '[.packageRules[] | select(.matchUpdateTypes != null)] | .[0].automerge' \
-    "true" \
-    "renovate.json: patch rule has automerge: true"
-
-# devDependencies rule has automerge: true (PR change: newly added)
-assert_json_eq "$RENOVATE" \
-    '[.packageRules[] | select(.matchDepTypes != null and (.matchDepTypes | contains(["devDependencies"])))] | .[0].automerge' \
-    "true" \
-    "renovate.json: devDependencies rule has automerge: true"
-
-assert_json_eq "$RENOVATE" \
-    '[.packageRules[] | select(.matchDepTypes != null and (.matchDepTypes | contains(["devDependencies"])))] | .[0].groupName' \
-    "dev-dependencies" \
-    "renovate.json: devDependencies rule groupName is 'dev-dependencies'"
-
-# github-actions rule exists and does NOT have automerge set (PR did not change it)
-assert_json_eq "$RENOVATE" \
-    '[.packageRules[] | select(.matchManagers != null and (.matchManagers | contains(["github-actions"])))] | .[0].groupName' \
-    "github-actions" \
-    "renovate.json: github-actions rule groupName is 'github-actions'"
-
-assert_json_eq "$RENOVATE" \
-    '[.packageRules[] | select(.matchManagers != null and (.matchManagers | contains(["github-actions"])))] | .[0].automerge // "null"' \
-    "null" \
-    "renovate.json: github-actions rule has no explicit automerge"
-
-# vulnerability alerts enabled with 'security' label
-assert_json_eq "$RENOVATE" '.vulnerabilityAlerts.enabled' "true" \
-    "renovate.json: vulnerabilityAlerts enabled"
-assert_json_eq "$RENOVATE" '.vulnerabilityAlerts.labels[0]' "security" \
-    "renovate.json: vulnerabilityAlerts label is 'security'"
-
-# PR limits
-assert_json_eq "$RENOVATE" '.prHourlyLimit' "2" "renovate.json: prHourlyLimit is 2"
-assert_json_eq "$RENOVATE" '.prConcurrentLimit' "10" "renovate.json: prConcurrentLimit is 10"
-
-# timezone
-assert_json_eq "$RENOVATE" '.timezone' "Europe/Stockholm" \
-    "renovate.json: timezone is Europe/Stockholm"
+assert_yaml_field "$DEPENDABOT" \
+    "str(all('schedule' in u and 'interval' in u['schedule'] for u in data['updates']))" \
+    "True" \
+    "dependabot.yml: all updates have schedule.interval"
 
 # ---------------------------------------------------------------------------
 echo "=== ci.yml: GitHub Actions workflow structure ==="
@@ -328,19 +261,16 @@ assert_contains "$CLAUDEMD" "## File Overview" "CLAUDE.md: has 'File Overview' s
 assert_contains "$CLAUDEMD" "## Conventions" "CLAUDE.md: has 'Conventions' section"
 
 # Tech stack entries
-assert_contains "$CLAUDEMD" "POSIX shell" "CLAUDE.md: mentions POSIX shell"
+assert_contains "$CLAUDEMD" "Python" "CLAUDE.md: mentions Python"
 assert_contains "$CLAUDEMD" "Docker" "CLAUDE.md: mentions Docker"
 assert_contains "$CLAUDEMD" "rclone" "CLAUDE.md: mentions rclone"
 assert_contains "$CLAUDEMD" "msmtp" "CLAUDE.md: mentions msmtp"
 
-# File overview lists key scripts
-assert_contains "$CLAUDEMD" "entrypoint.sh" "CLAUDE.md: lists entrypoint.sh"
-assert_contains "$CLAUDEMD" "run.sh" "CLAUDE.md: lists run.sh"
-assert_contains "$CLAUDEMD" "rclone_backup.sh" "CLAUDE.md: lists rclone_backup.sh"
-assert_contains "$CLAUDEMD" "send_report.sh" "CLAUDE.md: lists send_report.sh"
-
-# Convention: set -euo pipefail required
-assert_contains "$CLAUDEMD" "set -euo pipefail" "CLAUDE.md: mandates set -euo pipefail"
+# File overview lists key Python modules
+assert_contains "$CLAUDEMD" "src/entrypoint.py" "CLAUDE.md: lists src/entrypoint.py"
+assert_contains "$CLAUDEMD" "src/run.py" "CLAUDE.md: lists src/run.py"
+assert_contains "$CLAUDEMD" "src/backup.py" "CLAUDE.md: lists src/backup.py"
+assert_contains "$CLAUDEMD" "src/config.py" "CLAUDE.md: lists src/config.py"
 
 # Convention: no hardcoded secrets
 assert_contains "$CLAUDEMD" "never hardcoded" "CLAUDE.md: secrets must not be hardcoded"
