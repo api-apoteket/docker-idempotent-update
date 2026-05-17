@@ -1,7 +1,7 @@
 # docker-idempotent-update
 
 [![Build](https://github.com/blixten85/docker-idempotent-update/actions/workflows/build.yml/badge.svg)](https://github.com/blixten85/docker-idempotent-update/actions/workflows/build.yml)
-[![CodeQL](https://github.com/blixten85/docker-idempotent-update/actions/workflows/codeql.yml/badge.svg)](https://github.com/blixten85/docker-idempotent-update/actions/workflows/codeql.yml)
+[![CodeQL](https://github.com/blixten85/docker-idempotent-update/actions/workflows/dynamic%2Fgithub-code-scanning%2Fcodeql/badge.svg)](https://github.com/blixten85/docker-idempotent-update/security/code-scanning)
 [![Release](https://img.shields.io/github/v/release/blixten85/docker-idempotent-update)](https://github.com/blixten85/docker-idempotent-update/releases)
 [![Image](https://ghcr-badge.egpl.dev/blixten85/docker-idempotent-update/size?color=blue&label=image)](https://github.com/blixten85/docker-idempotent-update/pkgs/container/docker-idempotent-update)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -21,13 +21,13 @@ Runs on a schedule via an internal cron daemon. No systemd, no host dependencies
 ## How it works
 
 ```
-entrypoint.sh  (validates config based on MODE, starts crond)
-└── run.sh     (runs daily at 03:00 by default)
+src/entrypoint.py  (validates config based on MODE, starts crond)
+└── src/run.py     (runs daily at 03:00 by default)
       ├── update step    (if MODE = update | both)
-      │     └── docker compose pull + up   (or socket-only — see Options)
+      │     └── src/docker_update.py  → docker compose pull + up (or socket-only)
       ├── backup step    (if MODE = backup | both)
-      │     └── rclone sync per backup directory
-      └── send_report.sh
+      │     └── src/backup.py  → rclone sync per backup directory
+      └── src/report.py
             └── one combined mail if something changed or failed
 ```
 
