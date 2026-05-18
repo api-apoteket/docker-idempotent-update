@@ -116,11 +116,7 @@ jobs:
           echo "$out" | grep -q "=== send report ===" || { echo "send_report was not invoked"; exit 1; }
           echo "$out" | grep -q "Status written" || { echo "status.json was not written"; exit 1; }
           [ -s /tmp/cfg/status.json ] || { echo "status.json missing or empty"; exit 1; }
-          python3 -c "
-import json, sys
-s = json.load(open('/tmp/cfg/status.json'))
-assert s['mode'] == '$MODE', f'mode mismatch: {s[\"mode\"]}'
-" || { echo "status.json mode field mismatch"; cat /tmp/cfg/status.json; exit 1; }
+          python3 -c "import json; s=json.load(open('/tmp/cfg/status.json')); assert s['mode']=='$MODE', f'mode mismatch: {s[\"mode\"]}'" || { echo "status.json mode field mismatch"; cat /tmp/cfg/status.json; exit 1; }
 
   build:
     runs-on: ubuntu-latest
